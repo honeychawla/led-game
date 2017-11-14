@@ -46,6 +46,10 @@ void setup() {
   Serial.begin(9600);
   randomSeed(analogRead(0));
 
+  generatePlayer();
+  generateGun();
+  generateEnemies();
+
   matrix1.begin(0x70);
   matrix2.begin(0x71);
   matrix1.setRotation(3);
@@ -55,16 +59,147 @@ void setup() {
   matrix1.writeDisplay();
   matrix2.writeDisplay();
 
-  generatePlayer();
-  generateGun();
-  generateEnemies();
-
   drawMatrix1();
   drawMatrix2();
 }
 
 void loop() {
+
+  moveEnemies();
+  delay(1000);
+  drawMatrix1();
+  drawMatrix2();
+  delay(1000); 
+}
+
+void moveEnemies() {
+  // {enemyMatrix, enemyX, enemyY, enemyAlive}
+  for (int i = 0; i < 8; i++) {
+    int oldMatrix = enemies[i][0];
+    int oldX = enemies[i][1];
+    int oldY = enemies[i][2];
+    int alive = enemies[i][3];
+    
+    boolean found = false;
+
+    int newMatrix = oldMatrix;
+    int newX = oldX;
+    int newY = oldY;
+    
+    if (alive == 1) {
+      while (!found) {
+        // UP = 0 DOWN = 1 LEFT = 2 RIGHT = 3
+        int val = random(4);
+        String dir = "";
+        
+        if (val == 0) {
+          dir = "UP";
+        } else if (val == 1) {
+          dir = "DOWN";
+        } else if (val == 2) {
+          dir = "LEFT";
+        } else if (val == 3) {
+          dir = "RIGHT";
+        }
+
+        // Handle literal edge cases        
+        if ((oldY == 0 && dir.equals("UP")) ||
+            (oldY == 7 && dir.equals("DOWN")) ||
+            (oldMatrix == 1 && oldX == 0 && dir.equals("LEFT")) ||
+            (oldMatrix == 2 && oldX == 7 && dir.equals("RIGHT"))) {
+          // Top row supposed to go up or bottom row and supposed to go down
+          found = false;
+        } else {
+          // We're not in an edge case, so now we have to check if the spot we want to move to is open
+          if (dir.equals("UP")) {
+            if (oldMatrix == 1) {
+              if (matrix1Screen[oldX][oldY - 1] == 0) {
+                newY = oldY - 1;
+                found = true;
+              }
+            } else if (oldMatrix == 2) {
+              if (matrix2Screen[oldX][oldY - 1] == 0) {
+                newY = oldY - 1;
+                found = true;
+              }
+            }
+          } else if (dir.equals("DOWN")) {
+            if (oldMatrix == 1) {
+              if (matrix1Screen[oldX][oldY + 1] == 0) {
+                newY = oldY + 1;
+                found = true;
+              }
+            } else if (oldMatrix == 2) {
+              if (matrix2Screen[oldX][oldY + 1] == 0) {
+                newY = oldY + 1;
+                found = true;
+              }
+            }
+          } else if (dir.equals("LEFT")) {
+            if (oldMatrix == 1) {
+              if (matrix1Screen[oldX - 1][oldY] == 0) {
+                newX = oldX - 1;
+                found = true;
+              }
+            } else if (oldMatrix == 2) {
+              if (oldX == 0) {
+                if (matrix1Screen[7][oldY] == 0) {
+                  newMatrix = 1;
+                  newX = 7;
+                  found = true;
+                }
+              } else if (oldX > 0) {
+                if (matrix2Screen[oldX - 1][oldY] == 0) {
+                  newX = oldX - 1;
+                  found = true;
+                }
+              }
+            }
+          } else if (dir.equals("RIGHT")) {
+            if (oldMatrix == 1) {
+              if (oldX == 7) {
+                if (matrix2Screen[0][oldY] == 0) {
+                  newMatrix = 2;
+                  newX = 0;
+                  found = true;
+                }
+              } else if (oldX < 7) {
+                if (matrix1Screen[oldX + 1][oldY] == 0) {
+                  newX = oldX + 1;
+                  found = true;
+                }
+              }
+            } else if (oldMatrix == 2) {
+              if (matrix2Screen[oldX + 1][oldY] == 0) {
+                newX = oldX + 1;
+                found = true;
+              }
+            }
+          }
+        }
+      }
+
+      if (found) {
+        // Update enemies array
+        enemies[i][0] = newMatrix;
+        enemies[i][1] = newX;
+        enemies[i][2] = newY;
   
+        // Update screen matrices
+        if (oldMatrix == 1) {
+          matrix1Screen[oldX][oldY] = 0;
+        } else if (oldMatrix == 2) {
+          matrix2Screen[oldX][oldY] = 0;
+        }
+  
+        if (newMatrix == 1) {
+          matrix1Screen[newX][newY] = 3;
+        } else if (newMatrix == 2) {
+          matrix2Screen[newX][newY] = 3;
+        }
+      }
+    }
+  }
 }
 
 void generatePlayer() {
@@ -103,48 +238,56 @@ void generateGun() {
 void generateEnemies() {
   // For each enemy we have to spawn
   for (int i = 0; i < numEnemies; i++) {
-    int conflict = 2;
+    boolean conflict = true;
     int enemyMatrix;
     int enemyX;
     int enemyY;
     int enemyAlive = 1;
 
     // Find new locations until there isn't a conflict
-    while (conflict != 0) {
+    while (conflict) {
       // Determine which matrix they're on
       enemyMatrix = random(2) + 1;
       // Determine their x and y location
       enemyX = random(8);
       enemyY = random(8);
 
-      // Make sure another enemy isn't at that location
-      if (enemyMatrix == 1 && matrix1Screen[enemyX][enemyY] == 0) {
-        conflict--;
-      } else if (enemyMatrix == 2 && matrix2Screen[enemyX][enemyY] == 0) {
-        conflict--;
+      // Make sure another entity isn't at that location
+      if ((enemyMatrix == 1 && matrix1Screen[enemyX][enemyY] == 0) || (enemyMatrix == 2 && matrix2Screen[enemyX][enemyY] == 0)) {
+        if (enemyMatrix == playerMatrix) {
+          // They're on the same matrix
+          int diffPlayerX = abs(playerX - enemyX);
+          int diffPlayerY = abs(playerY - enemyY);
+  
+          int diffGunX = abs(gunX - enemyX);
+          int diffGunY = abs(gunY - enemyY);
+  
+          if (diffPlayerX > 1 && diffPlayerY > 1 && diffGunX > 1 && diffPlayerY > 1) {
+            conflict = false;
+          }
+        } else {
+          // They're on different matrices
+          if (enemyMatrix == 1) {
+            if (playerX > 0 && gunX > 0) {
+              conflict = false;
+            }
+          } else if (enemyMatrix == 2) {
+            if (playerX != 7 && gunX != 7) {
+              conflict = false;
+            }
+          }
+  
+          if (conflict) {
+            // Actually have to check for conflict, through their y values
+            int diffPlayerY = abs(enemyY - playerY);
+            int diffGunY = abs(enemyY - gunY);
+    
+            if (diffPlayerY > 1 && diffGunY > 1) {
+              conflict = false;
+            }
+          }
+        }
       }
-
-      // If the enemy gets spawned on the same matrix as the player
-      if (enemyMatrix == playerMatrix) {
-        // Make sure the player has a one pixel border around them where enemies can't spawn
-        if ((enemyX == playerX && enemyY != playerY + 1 && enemyY != playerY - 1) &&
-            (enemyX == gunX && enemyY != gunY + 1 && enemyY != gunY - 1) &&
-            (enemyX == playerX - 1 && enemyY != playerY - 1 && enemyY != playerY && enemyY != playerY + 1) &&
-            (enemyX == gunX + 1 && enemyY != gunY - 1 && enemyY != gunY && enemyY != gunY + 1)) {
-              conflict--;
-        }
-      } else {
-        // If they're not spawned on the same matrix, check the edges of the matrix
-        if (playerMatrix == 1) {
-          if (enemyX == 0 && enemyY != gunY && enemyY != gunY + 1 && enemyY != gunY - 1) {
-            conflict = 0;
-          }
-        } else if (playerMatrix == 2) {
-          if (enemyX == 7 && enemyY != playerY && enemyY != playerY + 1 && enemyY != playerY - 1) {
-            conflict = 0;
-          }
-        }
-      }      
     }
 
     // Assign the legitimate values
@@ -166,12 +309,13 @@ void drawMatrix1() {
   for (int i = 0; i < 8; i++) {
     for (int j = 0; j < 8; j++) {
       if (matrix1Screen[i][j] == 1) {
-        // Draw the player
         matrix1.drawPixel(i, j, PLAYER_COLOR);
       } else if (matrix1Screen[i][j] == 2) {
         matrix1.drawPixel(i, j, GUN_COLOR);
       } else if (matrix1Screen[i][j] == 3) {
         matrix1.drawPixel(i, j, ENEMY_COLOR);
+      } else if (matrix1Screen[i][j] == 0) {
+        matrix1.drawPixel(i, j, 0);
       }
     }
   }
@@ -189,6 +333,8 @@ void drawMatrix2() {
         matrix2.drawPixel(i, j, GUN_COLOR);
       } else if (matrix2Screen[i][j] == 3) {
         matrix2.drawPixel(i, j, ENEMY_COLOR);
+      } else if (matrix2Screen[i][j] == 0) {
+        matrix2.drawPixel(i, j, 0);
       }
     }
   }
