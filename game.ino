@@ -37,7 +37,7 @@ int gunY = 0;
 // Joystick
 const int joystickXAxis = A1;
 const int joystickYAxis = A0;
-int joystickSelect = 7;
+int joystickSelect = 2;
 int xReading;
 int yReading;
 int shoot;
@@ -51,6 +51,8 @@ void setup() {
   pinMode(joystickSelect, INPUT_PULLUP);
   
   randomSeed(analogRead(0));
+  
+  attachInterrupt(0, shoot_ISR, CHANGE);
 
   generatePlayer();
   generateGun();
@@ -71,7 +73,9 @@ void setup() {
 void loop() {
   boolean playing = true;
 
-  while (playing) {    
+  while (playing) {
+    movePlayer();
+    
     // Generate some enemies
     generateEnemies();
     
@@ -81,9 +85,34 @@ void loop() {
   
     // Move enemies
     moveEnemies();
-
-    movePlayer();
     delay(random(1400,2000));
+  }
+}
+
+void shoot_ISR() {
+  if (digitalRead(joystickSelect) == HIGH) {
+    shootGun();
+  }
+}
+
+void shootGun() {
+  // The bullet is going to travel in a straight horizontal line, so the y position will stay the same but the x position increase as well as change matrices
+  int currX = gunX;
+  int currY = gunY;
+  int currMatrix = 1;
+  int gone = 0;
+
+  if (currX != 7) {
+    // Just increase the x position
+    currX++;
+  } else if (currX == 7 && currMatrix == 1) {
+    // Change matrices
+    currMatrix = 2;
+    // Update x
+    currX = 0;
+  } else if (currX == 7 && currMatrix == 2) {
+    // We need to make the bullet disappear
+    gone = 1;
   }
 }
 
@@ -159,7 +188,7 @@ void movePlayer() {
 
 void moveEnemies() {
   for (int i = 0; i < 8; i++) {
-    for (int j = 0; j < 8; j++) {
+    for (int j = 0; j < 8; j++) {      
       if (i == 0 && matrix1Screen[i][j] == 3) {
         matrix1Screen[i][j] = 0;
       } else if (matrix1Screen[i][j] == 3) {
